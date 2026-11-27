@@ -1,11 +1,11 @@
 name: 每日股票分析
 
-run-name: ${{ github.event_name == 'schedule' && (github.event.schedule == '7 6 * * 1-5' && 'DSA 午盘 14:07' || 'DSA 午盘 14:00') || '每日股票分析' }}
+run-name: ${{ github.event_name == 'schedule' && (github.event.schedule == '52 5 * * 1-5' && 'DSA 午盘 13:52' || 'DSA 午盘 13:45') || '每日股票分析' }}
 
 on:
   schedule:
-    - cron: '0 6 * * 1-5'
-    - cron: '7 6 * * 1-5'
+    - cron: '45 5 * * 1-5'
+    - cron: '52 5 * * 1-5'
   # 手动触发
   workflow_dispatch:
     inputs:
@@ -43,13 +43,13 @@ jobs:
         uses: actions/github-script@v8
         with:
           script: |
-            if (!['0 6 * * 1-5', '7 6 * * 1-5'].includes(context.payload.schedule) || Number(process.env.GITHUB_RUN_ATTEMPT) !== 1) return false;
+            if (!['45 5 * * 1-5', '52 5 * * 1-5'].includes(context.payload.schedule) || Number(process.env.GITHUB_RUN_ATTEMPT) !== 1) return false;
             const {data: run} = await github.rest.actions.getWorkflowRun({
               ...context.repo, run_id: context.runId,
             });
             const day = new Date(Date.parse(run.created_at) + 8 * 3600000).toISOString().slice(0, 10);
-            const open = Date.parse(day + 'T14:00:00+08:00');
-            const close = Date.parse(day + 'T14:40:00+08:00');
+            const open = Date.parse(day + 'T13:45:00+08:00');
+            const close = Date.parse(day + 'T14:25:00+08:00');
             if (Date.parse(run.created_at) < open || Date.now() >= close) return false;
             const midnight = Date.parse(day + 'T00:00:00+08:00');
             const created = new Date(midnight).toISOString() + '..' + new Date(midnight + 86400000 - 1000).toISOString();
@@ -58,7 +58,7 @@ jobs:
                 ...context.repo, workflow_id: run.workflow_id, branch: run.head_branch, event: 'schedule', created, per_page: 100,
               });
               if (runs.some(item => item.id === context.runId)) {
-                return !runs.some(item => ['DSA 午盘 14:00', 'DSA 午盘 14:07'].includes(item.display_title) && Date.parse(item.created_at) >= open && item.run_number < run.run_number);
+                return !runs.some(item => ['DSA 午盘 13:45', 'DSA 午盘 13:52'].includes(item.display_title) && Date.parse(item.created_at) >= open && item.run_number < run.run_number);
               }
               if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 2000));
             }
