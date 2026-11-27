@@ -1,6 +1,10 @@
 name: 每日股票分析
 
+run-name: ${{ github.event_name == 'schedule' && 'DSA 午盘 14:00' || '每日股票分析' }}
+
 on:
+  schedule:
+    - cron: '0 6 * * 1-5'
   # 手动触发
   workflow_dispatch:
     inputs:
@@ -25,7 +29,42 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  lunch_slot:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    outputs:
+      first: ${{ steps.slot.outputs.result }}
+    steps:
+      - name: 核对北京时间当日第一趟午盘定时运行
+        id: slot
+        uses: actions/github-script@v8
+        with:
+          script: |
+            if (context.payload.schedule !== '0 6 * * 1-5' || Number(process.env.GITHUB_RUN_ATTEMPT) !== 1) return false;
+            const {data: run} = await github.rest.actions.getWorkflowRun({
+              ...context.repo, run_id: context.runId,
+            });
+            const day = new Date(Date.parse(run.created_at) + 8 * 3600000).toISOString().slice(0, 10);
+            const open = Date.parse(day + 'T14:00:00+08:00');
+            const close = Date.parse(day + 'T14:40:00+08:00');
+            if (Date.parse(run.created_at) < open || Date.now() >= close) return false;
+            const midnight = Date.parse(day + 'T00:00:00+08:00');
+            const created = new Date(midnight).toISOString() + '..' + new Date(midnight + 86400000 - 1000).toISOString();
+            for (let attempt = 0; attempt < 4; attempt++) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+                ...context.repo, workflow_id: run.workflow_id, branch: run.head_branch, event: 'schedule', created, per_page: 100,
+              });
+              if (runs.some(item => item.id === context.runId)) {
+                return !runs.some(item => item.display_title === run.display_title && item.run_number < run.run_number);
+              }
+              if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            throw new Error('Cannot verify the scheduled run in the Actions index.');
   analyze:
+    needs: lunch_slot
+    if: ${{ !cancelled() && (github.event_name != 'schedule' || (needs.lunch_slot.result == 'success' && needs.lunch_slot.outputs.first == 'true')) }}
     runs-on: ubuntu-latest
     # 兼容误将 STOCK_LIST 配到同名 Environment variables 的场景；
     # 推荐位置仍是 Settings -> Secrets and variables -> Actions -> Repository variables。
