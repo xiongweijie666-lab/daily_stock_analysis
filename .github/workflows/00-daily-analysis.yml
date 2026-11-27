@@ -58,7 +58,17 @@ jobs:
                 ...context.repo, workflow_id: run.workflow_id, branch: run.head_branch, event: 'schedule', created, per_page: 100,
               });
               if (runs.some(item => item.id === context.runId)) {
-                return !runs.some(item => ['DSA 午盘 13:45', 'DSA 午盘 13:52'].includes(item.display_title) && Date.parse(item.created_at) >= open && item.run_number < run.run_number);
+                const earlier = runs.filter(item => ['DSA 午盘 13:45', 'DSA 午盘 13:52'].includes(item.display_title) &&
+                  Date.parse(item.created_at) >= open && item.run_number < run.run_number);
+                for (const item of earlier) {
+                  if (item.status !== 'completed') return false;
+                  if (item.conclusion !== 'success') continue;
+                  const artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                    ...context.repo, run_id: item.id, per_page: 100,
+                  });
+                  if (artifacts.some(a => !a.expired && a.name === 'analysis-reports-' + item.run_number)) return false;
+                }
+                return true;
               }
               if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 2000));
             }
